@@ -12,6 +12,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const (
@@ -63,37 +64,35 @@ func main() {
 			return
 		}
 
-		err = uploader.UploadFile(blobFile, f.Filename)
+		fileID, err := uploader.UploadFile(blobFile, f.Filename)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
-
-		c.JSON(200, gin.H{
-			"message": "success",
-		})
+		c.JSON(200, gin.H{"message": "success", "fileID": fileID})
 	})
 
 	r.Run()
 }
 
 // UploadFile uploads an object
-func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
+func (c *ClientUploader) UploadFile(file multipart.File, object string) (string, error) {
 	ctx := context.Background()
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
 	defer cancel()
 
 	// Upload an object with storage.Writer.
-	wc := c.cl.Bucket(c.bucketName).Object(c.uploadPath + object).NewWriter(ctx)
+	objectName := fmt.Sprintf("-%s", uuid.New().String())
+	oName := object + objectName
+	wc := c.cl.Bucket(c.bucketName).Object(c.uploadPath + oName).NewWriter(ctx)
 	if _, err := io.Copy(wc, file); err != nil {
-		return fmt.Errorf("io.Copy: %v", err)
+		return "", fmt.Errorf("io.Copy: %v", err)
 	}
 	if err := wc.Close(); err != nil {
-		return fmt.Errorf("Writer.Close: %v", err)
+		return "", fmt.Errorf("Writer.Close: %v", err)
 	}
-
-	return nil
+	return oName, nil
 }
