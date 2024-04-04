@@ -40,7 +40,7 @@ func init() {
 		cl:         client,
 		bucketName: bucketName,
 		projectID:  projectID,
-		uploadPath: "test-files/",
+		uploadPath: "sipmaba/",
 	}
 
 }
