@@ -73,7 +73,34 @@ func main() {
 		}
 		c.JSON(200, gin.H{"message": "success", "fileID": fileID})
 	})
+	r.GET("/download/:filename", func(c *gin.Context) {
+		fileName := c.Param("filename")
 
+		// Retrieve the file from GCS using the ClientUploader
+		reader, err := uploader.DownloadFile(fileName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to download file: " + err.Error(),
+			})
+			return
+		}
+		// Set content disposition to suggest a filename for download
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
+		// Stream the file content directly to the response
+		c.Stream(func(w io.Writer) bool {
+			defer reader.Close() // Close the reader when finished
+
+			// Copy the file content to the response body
+			_, err := io.Copy(w, reader)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to stream file: " + err.Error(),
+				})
+				return false // Stop streaming
+			}
+			return true // Indicate successful streaming
+		})
+	})
 	r.Run()
 }
 
@@ -85,8 +112,8 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) (string,
 	defer cancel()
 
 	// Upload an object with storage.Writer.
-	objectName := fmt.Sprintf("-%s", uuid.New().String())
-	oName := object + objectName
+	objectName := fmt.Sprintf("%s", uuid.New().String())
+	oName := objectName + object
 	wc := c.cl.Bucket(c.bucketName).Object(c.uploadPath + oName).NewWriter(ctx)
 	if _, err := io.Copy(wc, file); err != nil {
 		return "", fmt.Errorf("io.Copy: %v", err)
@@ -96,3 +123,19 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) (string,
 	}
 	return oName, nil
 }
+
+func (c *ClientUploader) DownloadFile(fileName string) (io.ReadCloser, error) {
+	ctx := context.Background()
+
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	// Get a reference to the object with the filename
+	reader, err := c.cl.Bucket(c.bucketName).Object(c.uploadPath + fileName).NewReader(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("NewReader: %v", err)
+	}
+	return reader, nil
+}
+
+// misr-sipmaba-bucket/test-files/WhatsApp Image 2024-02-12 at 10.59.51_abe48a3c.jpg-5870d01c-b0f4-48ab-9e43-ec0033e9e6fc
